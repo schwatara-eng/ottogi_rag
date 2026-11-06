@@ -60,11 +60,18 @@ for path in csv_paths + md_paths:
         if path.suffix == ".csv":
             with path.open(encoding="utf-8-sig", newline="") as handle:
                 for row in csv.DictReader(handle):
-                    entries.append({
-                        "source": path.name,
-                        "location": row["근거ID"],
-                        "text": "\n".join(f"{key} {value}" for key, value in row.items()),
-                    })
+                    if path.name == "ottogi_policy_index.csv":
+                        entries.append({
+                            "source": row["출처 파일"],
+                            "location": f"PDF {row['PDF 쪽']}쪽 · {row['제목']} · {row['추출 방식']}",
+                            "text": f"{row['제목']}\n{row['본문']}",
+                        })
+                    else:
+                        entries.append({
+                            "source": path.name,
+                            "location": row["근거ID"],
+                            "text": "\n".join(f"{key} {value}" for key, value in row.items()),
+                        })
         else:
             markdown = path.read_text(encoding="utf-8-sig")
             for section in re.split(r"(?m)(?=^## )", markdown):
@@ -98,6 +105,8 @@ if keyword:
     for page in pages:
         text = page["text"]
         position = text.find(keyword)
+        if position < 0 and re.sub(r"\s+", "", keyword) in re.sub(r"\s+", "", text):
+            position = 0
 
         if position >= 0:
             start = max(0, position - 80)
@@ -136,7 +145,7 @@ if st.button("답변 받기"):
                 instructions=(
                     "제공된 문서 본문을 근거로 한국어로 답하세요. "
                     "각 판단 바로 뒤에 원문 PDF 파일명과 쪽수를 출처로 붙이세요. CSV나 안내서의 내용을 사용하면 해당 자료에 표시된 원문 근거를 인용하세요. "
-                    "행위의 정의, 금지 조건, 승인 예외를 구분하세요. "
+                    "OCR 자료의 숫자나 글자가 불명확하면 원문 확인이 필요하다고 알리세요. 행위의 정의, 금지 조건, 승인 예외를 구분하세요. "
                     "근거가 부족하면 '제공된 자료로는 확인할 수 없습니다.'라고 답하세요."
                 ),
                 input=f"질문:\n{question}\n\n문서 본문:\n{context}",
