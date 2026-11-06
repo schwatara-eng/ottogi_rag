@@ -1,13 +1,15 @@
+import csv
+import re
 from pathlib import Path
 from openai import OpenAI
 
 import streamlit as st
 from pypdf import PdfReader
 
-st.set_page_config(page_title="오뚜기 임직원 윤리규정 Q&A")
+st.set_page_config(page_title="오뚜기 기업 규정 Q&A")
 
-st.title("오뚜기 임직원 윤리규정 Q&A")
-st.write("임직원 윤리규정 PDF를 바탕으로 질문에 답하는 앱입니다.")
+st.title("오뚜기 기업 규정 Q&A")
+st.write("오뚜기 기업 규정과 사실표, 안내서를 바탕으로 질문에 답하는 앱입니다.")
 
 if st.secrets.get("OPENAI_API_KEY"):
     st.success("API 키를 읽었어요.")
@@ -17,8 +19,11 @@ else:
 data_dir = Path(__file__).resolve().parent / "data"
 pdf_paths = sorted(data_dir.glob("*.pdf"))
 
-if not pdf_paths:
-    st.error("data 폴더에 PDF를 넣어 주세요.")
+csv_paths = sorted(data_dir.glob("*.csv"))
+md_paths = sorted(data_dir.glob("*.md"))
+
+if not (pdf_paths or csv_paths or md_paths):
+    st.error("data 폴더에 PDF, CSV 또는 MD 자료를 넣어 주세요.")
     st.stop()
 
 pages = []
@@ -35,7 +40,7 @@ for pdf_path in pdf_paths:
             if text:
                 document_pages.append({
                     "source": pdf_path.name,
-                    "page": page_number,
+                    "location": f"PDF {page_number}쪽",
                     "text": text,
                 })
     except Exception:
@@ -49,14 +54,41 @@ for pdf_path in pdf_paths:
     pages.extend(document_pages)
     document_counts[pdf_path.name] = len(document_pages)
 
-st.write(f"PDF {len(pdf_paths)}개 중 {len(document_counts)}개에서 글자를 읽었어요.")
+for path in csv_paths + md_paths:
+    try:
+        entries = []
+        if path.suffix == ".csv":
+            with path.open(encoding="utf-8-sig", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    entries.append({
+                        "source": path.name,
+                        "location": row["근거ID"],
+                        "text": "\n".join(f"{key} {value}" for key, value in row.items()),
+                    })
+        else:
+            markdown = path.read_text(encoding="utf-8-sig")
+            for section in re.split(r"(?m)(?=^## )", markdown):
+                if section.strip():
+                    entries.append({
+                        "source": path.name,
+                        "location": section.splitlines()[0].lstrip("# ").strip(),
+                        "text": section.strip(),
+                    })
+    except (OSError, UnicodeError, csv.Error, KeyError):
+        st.warning(f"읽기 실패 · {path.name}")
+        continue
+    if entries:
+        pages.extend(entries)
+        document_counts[path.name] = len(entries)
+
+st.write(f"읽어온 문서 {len(document_counts)}개")
 
 if not pages:
     st.stop()
 
 with st.expander("읽어온 문서 목록"):
     for filename, page_count in document_counts.items():
-        st.write(f"{filename} · 글자가 있는 쪽 {page_count}개")
+        st.write(f"{filename} · 검색 단위 {page_count}개")
 
 keyword = st.text_input("검색할 단어를 입력해 주세요", placeholder="예: 접대").strip()
 
@@ -73,15 +105,15 @@ if keyword:
             matches.append((page, text[start:end]))
 
     if matches:
-        st.write(f"검색어가 포함된 쪽을 {len(matches)}개 찾았어요.")
+        st.write(f"검색어가 포함된 근거를 {len(matches)}개 찾았어요.")
 
         for page, excerpt in matches:
-            with st.expander(f"{page['source']} · PDF {page['page']}쪽"):
+            with st.expander(f"{page['source']} · {page['location']}"):
                 st.text(excerpt)
     else:
-        st.info("검색어가 들어 있는 쪽을 찾지 못했어요.")
+        st.info("검색어가 들어 있는 근거를 찾지 못했어요.")
 question = st.text_input(
-    "윤리규정에 대해 궁금한 점을 입력해 주세요",
+    "기업 규정에 대해 궁금한 점을 입력해 주세요",
     placeholder="예: 규정에서 접대에 해당하는 행위는 무엇인가요?",
 )
 
@@ -92,7 +124,7 @@ if st.button("답변 받기"):
         st.info("제공된 자료로는 확인할 수 없습니다.")
     else:
         context = "\n\n".join(
-            f"[{page['source']}, PDF {page['page']}쪽]\n{page['text']}"
+            f"[{page['source']}, {page['location']}]\n{page['text']}"
             for page, _ in matches
         )
 
@@ -103,7 +135,7 @@ if st.button("답변 받기"):
                 model="gpt-4.1-mini",
                 instructions=(
                     "제공된 문서 본문을 근거로 한국어로 답하세요. "
-                    "각 판단 바로 뒤에 [파일명, PDF N쪽] 형식으로 출처를 붙이세요. "
+                    "각 판단 바로 뒤에 원문 PDF 파일명과 쪽수를 출처로 붙이세요. CSV나 안내서의 내용을 사용하면 해당 자료에 표시된 원문 근거를 인용하세요. "
                     "행위의 정의, 금지 조건, 승인 예외를 구분하세요. "
                     "근거가 부족하면 '제공된 자료로는 확인할 수 없습니다.'라고 답하세요."
                 ),
