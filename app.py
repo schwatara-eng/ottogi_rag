@@ -17,6 +17,49 @@ else:
     st.error("API 키 설정을 확인해 주세요.")
 
 data_dir = Path(__file__).resolve().parent / "data"
+
+st.header("주제별 핵심 근거")
+
+facts_path = data_dir / "ottogi_facts.csv"
+
+if facts_path.is_file():
+    with facts_path.open(encoding="utf-8-sig", newline="") as file:
+        facts = list(csv.DictReader(file))
+
+    if facts:
+        topics = list(dict.fromkeys(fact["분야"] for fact in facts))
+
+        selected_topic = st.selectbox(
+            "분야 선택",
+            topics,
+            key="policy_dashboard_topic",
+        )
+
+        selected_facts = [
+            fact for fact in facts if fact["분야"] == selected_topic
+        ]
+
+        st.caption(f"ottogi_facts.csv에서 뽑은 대표 근거 {len(selected_facts)}개")
+
+        for fact in selected_facts:
+            summary_column, source_column = st.columns([3, 2])
+
+            with summary_column:
+                st.markdown(f"**{fact['근거ID']} · 핵심 내용**")
+                st.write(fact["내용"])
+                st.caption(f"적용 범위 · {fact['적용 범위']}")
+
+            with source_column:
+                st.markdown("**원문 위치**")
+                st.write(fact["출처 파일"])
+                st.caption(f"PDF {fact['PDF 쪽']}쪽 · {fact['조항']}")
+
+            st.divider()
+    else:
+        st.info("사실표에 표시할 근거가 없어.")
+else:
+    st.info("data 폴더에 ottogi_facts.csv를 넣으면 핵심 근거를 볼 수 있어.")
+
 pdf_paths = sorted(data_dir.glob("*.pdf"))
 
 csv_paths = sorted(data_dir.glob("*.csv"))
